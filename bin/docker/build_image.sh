@@ -5,7 +5,7 @@ set -e
 BASEDIR=$(dirname $0)
 PROJECT_ROOT="$BASEDIR/../.."
 
-DOCKERHUB_NAMESPACE=metabase
+DOCKERHUB_NAMESPACE=treexor
 
 
 BUILD_TYPE=$1
