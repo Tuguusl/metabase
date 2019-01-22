@@ -56,7 +56,7 @@ else
     echo "Building Docker image ${DOCKER_IMAGE} from local source"
 
     # trigger a full build
-    ${PROJECT_ROOT}/bin/build
+    ${PROJECT_ROOT}/bin/build no-translations
 
     if [ $? -eq 1 ]; then
         echo "Build failed!"
