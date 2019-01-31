@@ -132,7 +132,7 @@
                                           (str \@ (:name user)))
                              slack-groups   (for [group (slack/groups-list)]
                                               (str \# (:name group)))]
-                         (assoc-in chan-types [:slack :fields 0 :options] (concat (sort (concat slack-channels slack-groups)) slack-users))))}))
+                         (assoc-in chan-types [:slack :fields 0 :options] (concat (sort (concat slack-channels slack-groups)) slack-users)))
                    (catch Throwable e
                      (assoc-in chan-types [:slack :error] (.getMessage e)))))}))
 
