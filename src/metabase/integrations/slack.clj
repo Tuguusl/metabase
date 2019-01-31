@@ -50,6 +50,10 @@
   "Calls Slack api `users.list` function and returns the list of available users."
   (comp :members (partial GET :users.list)))
 
+(def ^{:arglists '([& {:as args}])} groups-list
+  "Calls Slack api `groups.list` function and returns the list of available groups."
+  (comp :groups (partial GET :groups.list)))
+
 (def ^:private ^:const ^String channel-missing-msg
   (str "Slack channel named `metabase_files` is missing! Please create the channel in order to complete "
        "the Slack integration. The channel is used for storing graphs that are included in pulses and "
