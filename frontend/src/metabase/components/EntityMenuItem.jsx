@@ -80,7 +80,7 @@ const EntityMenuItem = ({
 
   const content = (
     <Item>
-      <Icon name={icon} mr={1} />
+      {icon && <Icon name={icon} mr={1} />}
       <span className="text-bold">{title}</span>
     </Item>
   );
@@ -104,6 +104,8 @@ const EntityMenuItem = ({
       </ActionMenuItem>
     );
   }
+
+  return null;
 };
 
 export default EntityMenuItem;

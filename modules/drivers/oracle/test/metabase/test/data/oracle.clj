@@ -1,14 +1,19 @@
 (ns metabase.test.data.oracle
   (:require [clojure.java.jdbc :as jdbc]
-            [metabase.driver.sql-jdbc.connection :as sql-jdbc.conn]
+            [clojure.set :as set]
+            [metabase
+             [config :as config]
+             [util :as u]]
+            [metabase.driver.sql-jdbc
+             [connection :as sql-jdbc.conn]
+             [sync :as sql-jdbc.sync]]
             [metabase.test.data
              [interface :as tx]
              [sql :as sql.tx]
              [sql-jdbc :as sql-jdbc.tx]]
             [metabase.test.data.sql-jdbc
              [execute :as execute]
-             [load-data :as load-data]]
-            [metabase.util :as u]))
+             [load-data :as load-data]]))
 
 (sql-jdbc.tx/add-test-extensions! :oracle)
 
@@ -23,7 +28,7 @@
 ;; PUBLIC.CHECKINS.USER_ID    | CAM_195.test_data_checkins.user_id
 ;; PUBLIC.INCIDENTS.TIMESTAMP | CAM_195.sad_toucan_incidents.timestamp
 (defonce ^:private session-schema-number (rand-int 200))
-(defonce ^:private session-schema        (str "CAM_" session-schema-number))
+(defonce           session-schema        (str "CAM_" session-schema-number))
 (defonce ^:private session-password      (apply str (repeatedly 16 #(rand-nth (map char (range (int \a) (inc (int \z))))))))
 ;; Session password is only used when creating session user, not anywhere else
 
@@ -37,6 +42,8 @@
 
 (defmethod tx/dbdef->connection-details :oracle [& _] @connection-details)
 
+(defmethod tx/sorts-nil-first? :oracle [_] false)
+
 (defmethod sql.tx/field-base-type->sql-type [:oracle :type/BigInteger] [_ _] "NUMBER(*,0)")
 (defmethod sql.tx/field-base-type->sql-type [:oracle :type/Boolean]    [_ _] "NUMBER(1)")
 (defmethod sql.tx/field-base-type->sql-type [:oracle :type/Date]       [_ _] "DATE")
@@ -45,6 +52,10 @@
 (defmethod sql.tx/field-base-type->sql-type [:oracle :type/Float]      [_ _] "BINARY_FLOAT")
 (defmethod sql.tx/field-base-type->sql-type [:oracle :type/Integer]    [_ _] "INTEGER")
 (defmethod sql.tx/field-base-type->sql-type [:oracle :type/Text]       [_ _] "VARCHAR2(4000)")
+
+;; If someone tries to run Time column tests with Oracle give them a heads up that Oracle does not support it
+(defmethod sql.tx/field-base-type->sql-type [:oracle :type/Time] [_ _]
+  (throw (UnsupportedOperationException. "Oracle does not have a TIME data type.")))
 
 (defmethod sql.tx/drop-table-if-exists-sql :oracle [_ {:keys [database-name]} {:keys [table-name]}]
   (format "BEGIN
@@ -57,12 +68,6 @@
            END⅋"
           session-schema
           (tx/db-qualified-table-name database-name table-name)))
-
-(defmethod tx/expected-base-type->actual :oracle [_ base-type]
-  ;; Oracle doesn't have INTEGERs
-  (if (isa? base-type :type/Integer)
-    :type/Decimal
-    base-type))
 
 (defmethod sql.tx/create-db-sql :oracle [& _] nil)
 
@@ -96,6 +101,15 @@
   be ignored). (This is used as part of the implementation of `excluded-schemas` for the Oracle driver during tests.)"
   []
   (set (map :username (jdbc/query (dbspec) ["SELECT username FROM dba_users WHERE username <> ?" session-schema]))))
+
+(let [orig (get-method sql-jdbc.sync/excluded-schemas :oracle)]
+  (defmethod sql-jdbc.sync/excluded-schemas :oracle [driver]
+    (set/union
+     (orig driver)
+     (when config/is-test?
+       ;; This is similar hack we do for Redshift, see the explanation there we just want to ignore all the test
+       ;; "session schemas" that don't match the current test
+       (non-session-schemas)))))
 
 
 ;;; Clear out the sesion schema before and after tests run

@@ -2,8 +2,8 @@
   "Database driver for PostgreSQL databases. Builds on top of the SQL JDBC driver, which implements most functionality
   for JDBC-based drivers."
   (:require [clojure
-             [set :as set :refer [rename-keys]]
-             [string :as s]]
+             [set :as set]
+            [string :as str]]
             [clojure.java.jdbc :as jdbc]
             [honeysql.core :as hsql]
             [metabase.db.spec :as db.spec]
@@ -15,11 +15,13 @@
              [execute :as sql-jdbc.execute]
              [sync :as sql-jdbc.sync]]
             [metabase.driver.sql.query-processor :as sql.qp]
+            [metabase.driver.sql.util.unprepare :as unprepare]
             [metabase.util
+             [date :as du]
              [honeysql-extensions :as hx]
              [ssh :as ssh]])
   (:import java.sql.Time
-           java.util.UUID))
+           [java.util Date UUID]))
 
 (driver/register! :postgres, :parent :sql-jdbc)
 
@@ -30,8 +32,9 @@
 (defmethod driver/display-name :postgres [_] "PostgreSQL")
 
 
-(defmethod driver/date-interval :postgres [_ unit amount]
-  (hsql/raw (format "(NOW() + INTERVAL '%d %s')" (int amount) (name unit))))
+(defmethod driver/date-add :postgres [_ dt amount unit]
+  (hx/+ (hx/->timestamp dt)
+        (hsql/raw (format "(INTERVAL '%d %s')" (int amount) (name unit)))))
 
 (defmethod driver/humanize-connection-error-message :postgres [_ message]
   (condp re-matches message
@@ -52,7 +55,7 @@
 
     #"^FATAL: .*$" ; all other FATAL messages: strip off the 'FATAL' part, capitalize, and add a period
     (let [[_ message] (re-matches #"^FATAL: (.*$)" message)]
-      (str (s/capitalize message) \.))
+      (str (str/capitalize message) \.))
 
     #".*" ; default
     message))
@@ -133,7 +136,7 @@
 (defmethod sql.qp/date [:postgres :month-of-year]   [_ _ expr] (extract-integer :month expr))
 (defmethod sql.qp/date [:postgres :quarter]         [_ _ expr] (date-trunc :quarter expr))
 (defmethod sql.qp/date [:postgres :quarter-of-year] [_ _ expr] (extract-integer :quarter expr))
-(defmethod sql.qp/date [:postgres :year]            [_ _ expr] (extract-integer :year expr))
+(defmethod sql.qp/date [:postgres :year]            [_ _ expr] (date-trunc :year expr))
 
 
 (defmethod sql.qp/->honeysql [:postgres :value] [driver value]
@@ -145,9 +148,17 @@
         (isa? base-type :type/PostgresEnum) (hx/quoted-cast database-type value)
         :else                               (sql.qp/->honeysql driver value)))))
 
-(defmethod sql.qp/->honeysql [:postgres Time]
-  [_ time-value]
+(defmethod sql.qp/->honeysql [:postgres Time] [_ time-value]
   (hx/->time time-value))
+
+
+(defmethod unprepare/unprepare-value [:postgres Date] [_ value]
+  (format "'%s'::timestamp" (du/date->iso-8601 value)))
+
+(prefer-method unprepare/unprepare-value [:sql Time] [:postgres Date])
+
+(defmethod unprepare/unprepare-value [:postgres UUID] [_ value]
+  (format "'%s'::uuid" value))
 
 
 ;;; +----------------------------------------------------------------------------------------------------------------+
@@ -249,10 +260,9 @@
       (merge (if ssl?
                ssl-params
                disable-ssl-params))
-      (rename-keys {:dbname :db})
+      (set/rename-keys {:dbname :db})
       db.spec/postgres
       (sql-jdbc.common/handle-additional-options details-map)))
-
 
 (defmethod sql-jdbc.execute/set-timezone-sql :postgres [_]
   "SET SESSION TIMEZONE TO %s;")
